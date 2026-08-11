@@ -4,11 +4,12 @@ plugins {
 }
 
 android {
-    compileSdkVersion = 34
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
     defaultConfig {
-        minSdk = 21
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
     }
 
     compileOptions {
