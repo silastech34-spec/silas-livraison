@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../core/supabase_client.dart';
 import '../../services/colis_service.dart';
 import '../../services/auth_service.dart';
@@ -15,12 +16,23 @@ class LivreurHomeScreen extends StatefulWidget {
 class _LivreurHomeScreenState extends State<LivreurHomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
   final _colisService = ColisService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _accepterColis(ColisModel colis) async {
@@ -49,14 +61,38 @@ class _LivreurHomeScreenState extends State<LivreurHomeScreen>
 
     if (confirme != true) return;
 
-    // TODO: brancher ici le vrai paiement Wave/Orange Money/MTN
-    // avant de confirmer l'acceptation côté base.
+    final user = supabase.auth.currentUser;
 
-    final userId = supabase.auth.currentUser!.id;
-    await _colisService.accepterColis(colisId: colis.id, livreurId: userId);
+    if (user == null) {
+      if (!mounted) return;
 
-    if (mounted) {
-      context.push('/livreur/colis/${colis.id}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Session utilisateur introuvable.'),
+        ),
+      );
+
+      return;
+    }
+
+    try {
+      // TODO : brancher le vrai paiement Wave/Orange Money/MTN.
+      await _colisService.accepterColis(
+        colisId: colis.id,
+        livreurId: user.id,
+      );
+
+      if (mounted) {
+        context.push('/livreur/colis/${colis.id}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur : $e'),
+        ),
+      );
     }
   }
 
@@ -73,9 +109,60 @@ class _LivreurHomeScreenState extends State<LivreurHomeScreen>
     }
   }
 
+  Widget _erreurStream(Object? error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 56,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Impossible de charger les colis',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$error',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () {
+                setState(() {});
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+
+    if (user == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Session utilisateur introuvable.'),
+        ),
+      );
+    }
+
+    final userId = user.id;
 
     return Scaffold(
       appBar: AppBar(
@@ -94,33 +181,58 @@ class _LivreurHomeScreenState extends State<LivreurHomeScreen>
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => AuthService().signOut(),
+            onPressed: () async {
+              await AuthService().signOut();
+            },
           ),
         ],
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          // --- Colis disponibles ---
+          // ------------------------------------------------
+          // COLIS DISPONIBLES
+          // ------------------------------------------------
           StreamBuilder<List<ColisModel>>(
             stream: _colisService.colisDisponibles(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+              if (snapshot.hasError) {
+                return _erreurStream(snapshot.error);
               }
-              final colis = snapshot.data!;
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              final colis = snapshot.data ?? [];
+
               if (colis.isEmpty) {
-                return const Center(child: Text('Aucun colis disponible'));
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Aucun colis disponible pour le moment.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+                );
               }
+
               return ListView.builder(
                 padding: const EdgeInsets.all(12),
                 itemCount: colis.length,
                 itemBuilder: (context, i) {
                   final c = colis[i];
+
                   return Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     child: ListTile(
-                      title: Text('${c.commune} — ${c.prix} FCFA'),
+                      title: Text(
+                        '${c.commune} — ${c.prix} FCFA',
+                      ),
                       subtitle: Text(c.natureColis),
                       trailing: FilledButton(
                         onPressed: () => _accepterColis(c),
@@ -133,33 +245,62 @@ class _LivreurHomeScreenState extends State<LivreurHomeScreen>
             },
           ),
 
-          // --- Mes courses en cours + historique récent ---
+          // ------------------------------------------------
+          // MES COURSES
+          // ------------------------------------------------
           StreamBuilder<List<ColisModel>>(
             stream: _colisService.mesColisLivreur(userId),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+              if (snapshot.hasError) {
+                return _erreurStream(snapshot.error);
               }
-              final colis = snapshot.data!;
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              final colis = snapshot.data ?? [];
+
               if (colis.isEmpty) {
-                return const Center(child: Text('Aucune course pour le moment'));
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Aucune course pour le moment.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+                );
               }
+
               return ListView.builder(
                 padding: const EdgeInsets.all(12),
                 itemCount: colis.length,
                 itemBuilder: (context, i) {
                   final c = colis[i];
+
                   return Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     child: ListTile(
                       leading: CircleAvatar(
                         backgroundColor: _couleurStatut(c.statut),
+                        child: const Icon(
+                          Icons.local_shipping,
+                          color: Colors.white,
+                        ),
                       ),
-                      title: Text('${c.commune} — ${c.prix} FCFA'),
+                      title: Text(
+                        '${c.commune} — ${c.prix} FCFA',
+                      ),
                       subtitle: Text(c.natureColis),
                       onTap: c.statut == StatutColis.livre
                           ? null
-                          : () => context.push('/livreur/colis/${c.id}'),
+                          : () => context.push(
+                                '/livreur/colis/${c.id}',
+                              ),
                     ),
                   );
                 },
