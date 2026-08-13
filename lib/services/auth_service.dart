@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_client.dart';
 import '../models/profile_model.dart';
@@ -14,13 +15,26 @@ class AuthService {
     final res = await supabase.auth.signUp(email: email, password: password);
 
     if (res.user != null) {
-      await supabase.from('profiles').insert({
-        'id': res.user!.id,
-        'nom': nom,
-        'telephone': telephone,
-        'whatsapp': whatsapp,
-        'role': role,
-      });
+      try {
+        await supabase.from('profiles').insert({
+          'id': res.user!.id,
+          'nom': nom,
+          'telephone': telephone,
+          'whatsapp': whatsapp,
+          'role': role,
+        });
+      } catch (e, st) {
+        debugPrint('Erreur insertion profil: $e\n$st');
+        // On relance pour que l'UI (AuthScreen) affiche bien l'erreur
+        rethrow;
+      }
+    }
+
+    if (res.session == null) {
+      debugPrint(
+        'signUp OK mais aucune session ouverte — '
+        'la confirmation email est probablement encore activée dans Supabase.',
+      );
     }
 
     return res;
@@ -39,17 +53,33 @@ class AuthService {
 
   User? get currentUser => supabase.auth.currentUser;
 
+  /// Retourne le profil de l'utilisateur connecté, ou null s'il n'existe pas.
+  /// Utilise maybeSingle() pour distinguer "pas de ligne" d'une vraie erreur
+  /// (ex: policy RLS qui bloque la lecture).
   Future<ProfileModel?> getCurrentProfile() async {
     final user = currentUser;
     if (user == null) return null;
 
-    final data = await supabase
-        .from('profiles')
-        .select()
-        .eq('id', user.id)
-        .single();
+    try {
+      final data = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
 
-    return ProfileModel.fromJson(data);
+      if (data == null) {
+        debugPrint(
+          'Aucun profil trouvé pour user ${user.id} — '
+          'insert manqué au signUp ou policy RLS SELECT manquante ?',
+        );
+        return null;
+      }
+
+      return ProfileModel.fromJson(data);
+    } catch (e, st) {
+      debugPrint('Erreur getCurrentProfile: $e\n$st');
+      rethrow;
+    }
   }
 
   Stream<AuthState> get authStateChanges => supabase.auth.onAuthStateChange;
