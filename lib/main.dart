@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/supabase_client.dart';
-import 'core/router/app_router.dart';
+import 'router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
