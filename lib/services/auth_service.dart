@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'supabase_client.dart';
-import 'profile_model.dart';
+import '../core/supabase_client.dart';
+import '../models/profile_model.dart';
 
 class AuthService {
   Future<AuthResponse> signUp({
