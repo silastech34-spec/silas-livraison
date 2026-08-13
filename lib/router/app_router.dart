@@ -22,8 +22,9 @@ final router = GoRouter(
       return loggingIn ? null : '/auth';
     }
 
-    if (loggingIn) {
-      // Redirige selon le rôle après connexion
+    // Utilisateur connecté : s'il est sur /auth ou sur la racine '/',
+    // on le redirige vers son espace selon son rôle
+    if (loggingIn || state.matchedLocation == '/') {
       final profile = await _authService.getCurrentProfile();
       if (profile == null) return '/auth';
       return profile.isLivreur ? '/livreur' : '/client';
