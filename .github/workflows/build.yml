@@ -43,14 +43,22 @@ jobs:
 
       - name: Build APK (with retry)
         run: |
+          success=false
           for i in 1 2 3; do
             echo "Tentative $i de build..."
-            flutter build apk --release \
+            if flutter build apk --release \
               --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-              --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} && break
+              --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}; then
+              success=true
+              break
+            fi
             echo "Échec du build, nouvelle tentative dans 15s..."
             sleep 15
           done
+          if [ "$success" = false ]; then
+            echo "Les 3 tentatives de build ont échoué."
+            exit 1
+          fi
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
