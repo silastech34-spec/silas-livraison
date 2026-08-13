@@ -25,9 +25,21 @@ final router = GoRouter(
     // Utilisateur connecté : s'il est sur /auth ou sur la racine '/',
     // on le redirige vers son espace selon son rôle
     if (loggingIn || state.matchedLocation == '/') {
-      final profile = await _authService.getCurrentProfile();
-      if (profile == null) return '/auth';
-      return profile.isLivreur ? '/livreur' : '/client';
+      try {
+        final profile = await _authService.getCurrentProfile();
+        if (profile == null) {
+          debugPrint(
+            'Aucun profil trouvé pour ${supabase.auth.currentUser?.id} '
+            '— vérifie la table profiles et les policies RLS.',
+          );
+          return '/auth';
+        }
+        return profile.isLivreur ? '/livreur' : '/client';
+      } catch (e, st) {
+        debugPrint('Erreur lors du chargement du profil: $e\n$st');
+        // On évite de laisser l'utilisateur bloqué silencieusement sur un écran blanc
+        return '/auth';
+      }
     }
 
     return null;
