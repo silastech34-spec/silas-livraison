@@ -1,5 +1,5 @@
 import '../core/supabase_client.dart';
-import '../models/colis_model.dart';';
+import '../models/colis_model.dart';
 
 class ColisService {
   // ---------- CLIENT : soumettre un colis ----------
