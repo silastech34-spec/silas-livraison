@@ -15,20 +15,50 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.1'
+          flutter-version: '3.24.0'
           channel: 'stable'
-
-      - name: Clean Flutter
-        run: flutter clean
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build APK
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Pre-download Gradle wrapper (with retry)
+        working-directory: android
         run: |
-          flutter build apk --release \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          for i in 1 2 3 4 5; do
+            echo "Tentative $i de téléchargement du Gradle wrapper..."
+            ./gradlew --version && break
+            echo "Échec, nouvelle tentative dans 10s..."
+            sleep 10
+          done
+
+      - name: Build APK (with retry)
+        run: |
+          success=false
+          for i in 1 2 3; do
+            echo "Tentative $i de build..."
+            if flutter build apk --release \
+              --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+              --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}; then
+              success=true
+              break
+            fi
+            echo "Échec du build, nouvelle tentative dans 15s..."
+            sleep 15
+          done
+          if [ "$success" = false ]; then
+            echo "Les 3 tentatives de build ont échoué."
+            exit 1
+          fi
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
