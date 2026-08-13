@@ -9,31 +9,45 @@ class AuthService {
     required String password,
     required String nom,
     required String telephone,
-    required String role, // client | livreur
+    required String role,
     String? whatsapp,
   }) async {
-    final res = await supabase.auth.signUp(email: email, password: password);
+    final res = await supabase.auth.signUp(
+      email: email.trim(),
+      password: password,
+    );
 
-    if (res.user != null) {
-      try {
-        await supabase.from('profiles').insert({
+    if (res.user == null) {
+      throw const AuthException(
+        'Impossible de créer le compte.',
+      );
+    }
+
+    try {
+      await supabase.from('profiles').upsert(
+        {
           'id': res.user!.id,
-          'nom': nom,
-          'telephone': telephone,
+          'nom': nom.trim(),
+          'telephone': telephone.trim(),
           'whatsapp': whatsapp,
           'role': role,
-        });
-      } catch (e, st) {
-        debugPrint('Erreur insertion profil: $e\n$st');
-        // On relance pour que l'UI (AuthScreen) affiche bien l'erreur
-        rethrow;
-      }
+        },
+        onConflict: 'id',
+      );
+
+      debugPrint(
+        'Profil créé avec succès pour ${res.user!.id}',
+      );
+    } catch (e, st) {
+      debugPrint('Erreur insertion profil: $e');
+      debugPrint('$st');
+      rethrow;
     }
 
     if (res.session == null) {
       debugPrint(
-        'signUp OK mais aucune session ouverte — '
-        'la confirmation email est probablement encore activée dans Supabase.',
+        'Compte créé mais aucune session. '
+        'La confirmation email est probablement activée dans Supabase.',
       );
     }
 
@@ -43,22 +57,50 @@ class AuthService {
   Future<AuthResponse> signIn({
     required String email,
     required String password,
-  }) {
-    return supabase.auth.signInWithPassword(email: email, password: password);
+  }) async {
+    final cleanEmail = email.trim();
+
+    if (cleanEmail.isEmpty) {
+      throw const AuthException('Veuillez saisir votre email.');
+    }
+
+    if (password.isEmpty) {
+      throw const AuthException('Veuillez saisir votre mot de passe.');
+    }
+
+    debugPrint('Tentative de connexion : $cleanEmail');
+
+    final response = await supabase.auth.signInWithPassword(
+      email: cleanEmail,
+      password: password,
+    );
+
+    if (response.user == null || response.session == null) {
+      throw const AuthException(
+        'Connexion impossible : aucune session Supabase.',
+      );
+    }
+
+    debugPrint(
+      'Connexion réussie : ${response.user!.id}',
+    );
+
+    return response;
   }
 
-  Future<void> signOut() {
-    return supabase.auth.signOut();
+  Future<void> signOut() async {
+    await supabase.auth.signOut();
   }
 
   User? get currentUser => supabase.auth.currentUser;
 
-  /// Retourne le profil de l'utilisateur connecté, ou null s'il n'existe pas.
-  /// Utilise maybeSingle() pour distinguer "pas de ligne" d'une vraie erreur
-  /// (ex: policy RLS qui bloque la lecture).
   Future<ProfileModel?> getCurrentProfile() async {
     final user = currentUser;
-    if (user == null) return null;
+
+    if (user == null) {
+      debugPrint('getCurrentProfile : aucun utilisateur connecté.');
+      return null;
+    }
 
     try {
       final data = await supabase
@@ -69,18 +111,24 @@ class AuthService {
 
       if (data == null) {
         debugPrint(
-          'Aucun profil trouvé pour user ${user.id} — '
-          'insert manqué au signUp ou policy RLS SELECT manquante ?',
+          'Profil introuvable pour ${user.id}.',
         );
         return null;
       }
 
+      debugPrint(
+        'Profil trouvé : ${data['role']}',
+      );
+
       return ProfileModel.fromJson(data);
     } catch (e, st) {
-      debugPrint('Erreur getCurrentProfile: $e\n$st');
+      debugPrint('Erreur getCurrentProfile : $e');
+      debugPrint('$st');
       rethrow;
     }
   }
 
-  Stream<AuthState> get authStateChanges => supabase.auth.onAuthStateChange;
+  Stream<AuthState> get authStateChanges {
+    return supabase.auth.onAuthStateChange;
+  }
 }
