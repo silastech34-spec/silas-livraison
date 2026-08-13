@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../core/supabase_client.dart';
 import '../../services/colis_service.dart';
 import '../../services/auth_service.dart';
@@ -41,7 +42,18 @@ class ClientHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colisService = ColisService();
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+
+    // Sécurité : si la session a disparu, on évite le crash.
+    if (user == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Session utilisateur introuvable.'),
+        ),
+      );
+    }
+
+    final userId = user.id;
 
     return Scaffold(
       appBar: AppBar(
@@ -49,7 +61,9 @@ class ClientHomeScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => AuthService().signOut(),
+            onPressed: () async {
+              await AuthService().signOut();
+            },
           ),
         ],
       ),
@@ -61,15 +75,69 @@ class ClientHomeScreen extends StatelessWidget {
       body: StreamBuilder<List<ColisModel>>(
         stream: colisService.mesColisClient(userId),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+          // IMPORTANT :
+          // On affiche maintenant l'erreur réelle au lieu
+          // de laisser un spinner tourner indéfiniment.
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 56,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Impossible de charger tes colis',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: () {
+                        // Le StreamBuilder sera reconstruit.
+                        (context as Element).markNeedsBuild();
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
-          final colis = snapshot.data!;
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          final colis = snapshot.data ?? [];
+
           if (colis.isEmpty) {
             return const Center(
-              child: Text('Aucun colis pour le moment.\nAppuie sur + pour en créer un.',
-                  textAlign: TextAlign.center),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Aucun colis pour le moment.\n\nAppuie sur + pour en créer un.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
             );
           }
 
@@ -78,16 +146,22 @@ class ClientHomeScreen extends StatelessWidget {
             itemCount: colis.length,
             itemBuilder: (context, i) {
               final c = colis[i];
+
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundColor: _couleurStatut(c.statut),
-                    child: const Icon(Icons.inventory_2, color: Colors.white, size: 20),
+                    child: const Icon(
+                      Icons.inventory_2,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                   title: Text(c.natureColis),
                   subtitle: Text(
-                    '${c.commune} — ${c.prix} FCFA\n${_labelStatut(c.statut)}',
+                    '${c.commune} — ${c.prix} FCFA\n'
+                    '${_labelStatut(c.statut)}',
                   ),
                   isThreeLine: true,
                   trailing: Text(
