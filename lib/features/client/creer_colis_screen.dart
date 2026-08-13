@@ -96,7 +96,7 @@ class _CreerColisScreenState extends State<CreerColisScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
-                      initialValue: _communeSelectionnee,
+                     value: _communeSelectionnee,
                       decoration: const InputDecoration(labelText: 'Commune'),
                       items: _communes.map((c) {
                         return DropdownMenuItem<String>(
